@@ -8,11 +8,11 @@
 # Import functions/classes to make the public API
 from . import version
 from .ellipsoid import Ellipsoid
-from .sphere import Sphere
 from .realizations import WGS84, GRS80, MARS, VENUS, MOON, MERCURY
 
 
 ELLIPSOIDS = [WGS84, GRS80, MARS, VENUS, MOON, MERCURY]
+ELLIPSOIDS = [WGS84, MOON ]
 
 # Get the version number through setuptools-scm
 __version__ = version.version

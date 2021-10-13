@@ -11,38 +11,41 @@ from warnings import warn
 import attr
 import numpy as np
 
-
 # Don't let ellipsoid parameters be changed to avoid messing up calculations
 # accidentally.
 @attr.s(frozen=True)
 class Ellipsoid:
     """
-    Reference oblate ellipsoid.
+    Reference ellipsoid.
 
-    The ellipsoid is oblate and spins around it's minor axis. It is defined by
-    four parameters (semi-major axis, flattening, geocentric gravitational
-    constant, and angular velocity) and offers other derived quantities.
+    Represents an ellipsoid which spins around it's minor axis. The ellipsoid 
+    can be a sphere, oblate spheroid, or triaxial ellipsoid depending on the 
+    parameters parsed at initialisation.
+
+    It is defined by 3 types of parameters; one (sphere), two (oblate 
+    spheroid) or three (triaxial ellipsoid) semi-axis lengths, the geocentric 
+    gravitational constant, and angular velocity. 
+    Alternatively, oblate spheroids may also be initialed through the use of a 
+    semimajor radius and a flattening factor.
 
     **All attributes of this class are read-only and cannot be changed after
     instantiation.**
 
     All parameters are in SI units.
 
-    .. note::
-
-        Use :class:`boule.Sphere` if you desire zero flattening because there
-        are singularities for this particular case in the normal gravity
-        calculations.
-
     Parameters
     ----------
     name : str
         A short name for the ellipsoid, for example ``'WGS84'``.
     semimajor_axis : float
-        The semi-major axis of the ellipsoid (equatorial radius), usually
-        represented by "a" [meters].
+        The largest radii of the ellipsoid [metres].
+    semiminor_axis : float
+        The smallest radii of the ellipsoid [metres].
+    semimedium_axis : float
+        The radii whose value is between the semi-major and semi-minor axis 
+        lengths of a triaxial ellipsoid [metres].
     flattening : float
-        The flattening of the ellipsoid (f) [adimensional].
+        The flattening of the oblate spheroid (f) [adimensional].
     geocentric_grav_const : float
         The geocentric gravitational constant (GM) [m^3 s^-2].
     angular_velocity : float
@@ -56,68 +59,92 @@ class Ellipsoid:
     Examples
     --------
 
-    We can define an ellipsoid by setting the 4 key numerical parameters:
+    We can define a sphere by specifying 3 numerical parameters,
+
+    >>> sphere = Ellipsoid(
+    ...     name="Ball",
+    ...     long_name="A Sphere",
+    ...     semimajor_axis=1,
+    ...     geocentric_grav_const=2,
+    ...     angular_velocity=0.5,
+    ... )
+
+    Or, we can define an oblate ellipsoid by setting 4 numerical parameters,
+    either the semimajor axis and flattening, or the semimajor and semiminor 
+    axes:
 
     >>> ellipsoid = Ellipsoid(
-    ...     name="oblate-ellipsoid",
-    ...     long_name="Oblate Ellipsoid",
+    ...     name="Orange",
+    ...     long_name="An Oblate Ellipsoid",
     ...     semimajor_axis=1,
     ...     flattening=0.5,
     ...     geocentric_grav_const=1,
     ...     angular_velocity=0,
     ... )
+
+    Or, we can define a triaxial ellipsoid by setting 5 numerical parameters:
+
+    >>> triaxialellipsoid = Ellipsoid(
+    ...     name="Watermelon",
+    ...     long_name="A triaxial Ellipsoid",
+    ...     semimajor_axis=6,
+    ...     semimedium_axis=4,
+    ...     semiminor_axis=2,
+    ...     geocentric_grav_const=1,
+    ...     angular_velocity=0,
+    ... )
+
     >>> print(ellipsoid) # doctest: +ELLIPSIS
-    Ellipsoid(name='oblate-ellipsoid', ...)
-    >>> print(ellipsoid.long_name)
-    Oblate Ellipsoid
+    Ellipsoid(name='Orange', ...)
+    >>> shapes = [sphere, ellipsoid, triaxialellipsoid]
+    >>> [ shape.long_name) for shape in shapes ]
+    [ "A Sphere", "An Oblate Ellipsoid", "A triaxial Ellipsoid]
 
     The class defines several derived attributes based on the input parameters:
 
-    >>> print("{:.2f}".format(ellipsoid.semiminor_axis))
-    0.50
-    >>> print("{:.2f}".format(ellipsoid.mean_radius))
-    0.83
+    >>> [ shape.kind for shape in shapes ]
+    [ "sphere", "oblate", "triaxial"]
+    >>> [ shape.semimajor_axis for shape in shapes ]
+    [ 1, 1, 6 ]
+    >>> [ shape.mean_radius for shape in shapes ]
+    [ 1, 0.75, 4 ] 
+    >>> [ shape.volume for shape in shapes ]
+    [ A, B, C ]     ## To be calculated
+
+    Some shapes have additional attributes that are commonly used.
+
     >>> print("{:.2f}".format(ellipsoid.linear_eccentricity))
     0.87
     >>> print("{:.2f}".format(ellipsoid.first_eccentricity))
     0.87
     >>> print("{:.2f}".format(ellipsoid.second_eccentricity))
     1.73
-
     """
 
+    # TO DO: Add logic that allows any one of the following:
+    # Semimajor axis
+    # Semimajor and semiminor
+    # semimajor and flattening
+    # semimajor, semimedium and semiminor.
     name = attr.ib()
     semimajor_axis = attr.ib()
-    flattening = attr.ib()
     geocentric_grav_const = attr.ib()
     angular_velocity = attr.ib()
+    semimedium_axis = attr.ib(default=None)
+    semiminor_axis = attr.ib(default=None)
+    flattening = attr.ib(default=None)
     long_name = attr.ib(default=None)
     reference = attr.ib(default=None)
 
-    @flattening.validator
-    def _check_flattening(
-        self, flattening, value
-    ):  # pylint: disable=no-self-use,unused-argument
-        """
-        Check if flattening is valid
-        """
-        if value < 0 or value >= 1:
-            raise ValueError(
-                f"Invalid flattening '{value}'. "
-                "Should be greater than zero and lower than 1."
-            )
-        if value == 0:
-            raise ValueError(
-                "Flattening equal to zero will lead to errors in normal gravity. "
-                "Use boule.Sphere for representing ellipsoids with zero flattening."
-            )
-        if value < 1e-7:
-            warn(
-                f"Flattening is too close to zero ('{value}'). "
-                "This may lead to inaccurate results and division by zero errors. "
-                "Use boule.Sphere for representing ellipsoids with zero flattening."
-            )
+    @property
+    def kind(self):
+        if self.flattening is not None:
+            return "oblate"
+        if self.semiminor_axis is not None and self.semimedium_axis is not None:
+            return "triaxial"
+        return "sphere"
 
+    # Question: Do validators get called on every init, or only when the parameters are specified?
     @semimajor_axis.validator
     def _check_semimajor_axis(
         self, semimajor_axis, value
@@ -140,73 +167,144 @@ class Ellipsoid:
         if value < 0:
             warn(f"The geocentric gravitational constant is negative: '{value}'")
 
+    @flattening.validator
+    def _check_flattening(
+        self, flattening, value
+    ):  # pylint: disable=no-self-use,unused-argument
+        """
+        Check if flattening is valid
+        """
+        # This validator is a WIP. I am not sure what to do here.
+        if value is None:
+            pass
+        elif value < 0 or value >= 1:
+            raise ValueError(
+                f"Invalid flattening '{value}'. "
+                "Should be greater than zero and lower than 1."
+            )
+        elif value == 0:
+            raise ValueError(
+                "Flattening equal to zero will lead to errors in normal gravity. "
+                "Use boule.Sphere for representing ellipsoids with zero flattening."
+            )
+        elif value < 1e-7:
+            warn(
+                f"Flattening is too close to zero ('{value}'). "
+                "This may lead to inaccurate results and division by zero errors. "
+                "Use boule.Sphere for representing ellipsoids with zero flattening."
+            )
+
     @property
     def semiminor_axis(self):
         "The small (polar) axis of the ellipsoid [meters]"
-        return self.semimajor_axis * (1 - self.flattening)
+        if self.flattening is not None and self.kind == "oblate":
+            return self.semimajor_axis * (1 - self.flattening)
+        return self.semiminor_axis
 
     @property
     def linear_eccentricity(self):
         "The linear eccentricity [meters]"
-        return np.sqrt(self.semimajor_axis ** 2 - self.semiminor_axis ** 2)
+        if self.kind == 'oblate':
+            return np.sqrt(self.semimajor_axis ** 2 - self.semiminor_axis ** 2)
+        raise ValueError("Linear eccentricity is not defined for Spheres or Triaxial Ellipsoids")
 
     @property
     def first_eccentricity(self):
         "The first eccentricity [adimensional]"
-        return self.linear_eccentricity / self.semimajor_axis
+        if self.kind == 'oblate':
+            return self.linear_eccentricity / self.semimajor_axis
+        raise ValueError("First eccentricity is not defined for Spheres or Triaxial Ellipsoids")
 
     @property
     def second_eccentricity(self):
         "The second eccentricity [adimensional]"
-        return self.linear_eccentricity / self.semiminor_axis
+        if self.kind == 'oblate':
+            return self.linear_eccentricity / self.semiminor_axis
+        raise ValueError("Second eccentricity is not defined for Spheres or Triaxial Ellipsoids")
+
+    @property
+    def volume(self):
+        """The volume of the ellipsoid [ metres^3 ]"""
+        if self.kind == 'sphere':
+            return 4 / 3 *np.pi* (self.semimajor_axis**3)
+        if self.kind == 'oblate':
+            return 4 / 3 *np.pi* (2 * self.semimajor_axis * self.semiminor_axis)
+        if self.kind == 'triaxial':
+            return 4 / 3 *np.pi* (self.semimajor_axis * self.semimedium_axis * self.semiminor_axis)
 
     @property
     def mean_radius(self):
         """
         The arithmetic mean radius :math:`R_1=(2a+b)/3` [Moritz1988]_ [meters]
         """
-        return 1 / 3 * (2 * self.semimajor_axis + self.semiminor_axis)
+        if self.kind == 'sphere':
+            return 1 / 3 * (3 * self.semimajor_axis)
+        if self.kind == 'oblate':
+            return 1 / 3 * (2 * self.semimajor_axis + self.semiminor_axis)
+        if self.kind == 'triaxial':
+            return 1 / 3 * (self.semimajor_axis + self.semimedium_axis + self.semiminor_axis)
 
     @property
     def emm(self):
         r"Auxiliary quantity :math:`m = \omega^2 a^2 b / (GM)`"
-        return (
-            self.angular_velocity ** 2
-            * self.semimajor_axis ** 2
-            * self.semiminor_axis
-            / self.geocentric_grav_const
-        )
+        if self.kind == 'oblate' :
+            return (
+                self.angular_velocity ** 2
+                * self.semimajor_axis ** 2
+                * self.semiminor_axis
+                / self.geocentric_grav_const
+            )
+        else:
+            raise ValueError("Emm values not defined for sphere or triaxial ellipsoids")
 
     @property
     def gravity_equator(self):
         """
         The norm of the gravity vector on the ellipsoid at the equator [m/s²]
         """
-        ratio = self.semiminor_axis / self.linear_eccentricity
-        arctan = np.arctan2(self.linear_eccentricity, self.semiminor_axis)
-        aux = (
-            self.second_eccentricity
-            * (3 * (1 + ratio ** 2) * (1 - ratio * arctan) - 1)
-            / (3 * ((1 + 3 * ratio ** 2) * arctan - 3 * ratio))
-        )
-        axis_mul = self.semimajor_axis * self.semiminor_axis
-        result = self.geocentric_grav_const * (1 - self.emm - self.emm * aux) / axis_mul
-        return result
+        if self.kind == "oblate":
+            ratio = self.semiminor_axis / self.linear_eccentricity
+            arctan = np.arctan2(self.linear_eccentricity, self.semiminor_axis)
+            aux = (
+                self.second_eccentricity
+                * (3 * (1 + ratio ** 2) * (1 - ratio * arctan) - 1)
+                / (3 * ((1 + 3 * ratio ** 2) * arctan - 3 * ratio))
+            )
+            axis_mul = self.semimajor_axis * self.semiminor_axis
+            result = self.geocentric_grav_const * (1 - self.emm - self.emm * aux) / axis_mul
+            return result
+        if self.kind == "sphere":
+            return (
+                self.geocentric_grav_const / self.radius ** 2
+                - self.radius * self.angular_velocity ** 2
+            )
+        if self.kind == "triaxial":
+            raise ValueError("The Gravity at the equator is not constant for a triaxial ellipsoid")
 
     @property
     def gravity_pole(self):
         "The norm of the gravity vector on the ellipsoid at the poles [m/s²]"
-        ratio = self.semiminor_axis / self.linear_eccentricity
-        arctan = np.arctan2(self.linear_eccentricity, self.semiminor_axis)
-        aux = (
-            self.second_eccentricity
-            * (3 * (1 + ratio ** 2) * (1 - ratio * arctan) - 1)
-            / (1.5 * ((1 + 3 * ratio ** 2) * arctan - 3 * ratio))
-        )
-        result = (
-            self.geocentric_grav_const * (1 + self.emm * aux) / self.semimajor_axis ** 2
-        )
-        return result
+        if self.kind == 'sphere':
+            return self.geocentric_grav_const / self.radius ** 2
+        if self.kind == 'oblate':
+            ratio = self.semiminor_axis / self.linear_eccentricity
+            arctan = np.arctan2(self.linear_eccentricity, self.semiminor_axis)
+            aux = (
+                self.second_eccentricity
+                * (3 * (1 + ratio ** 2) * (1 - ratio * arctan) - 1)
+                / (1.5 * ((1 + 3 * ratio ** 2) * arctan - 3 * ratio))
+            )
+            result = (
+                self.geocentric_grav_const * (1 + self.emm * aux) / self.semimajor_axis ** 2
+            )
+            return result
+        if self.kind == 'triaxial':
+            raise NotImplementedError("gravity_pole is not yet implemented for triaxial ellipsoids")
+
+
+    #######################
+    ### All code below this point copied from the old oblate ellipsoid class verbatim.
+    ########################
 
     def geocentric_radius(self, latitude, geodetic=True):
         r"""
